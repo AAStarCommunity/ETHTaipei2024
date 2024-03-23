@@ -1,0 +1,44 @@
+{
+  "name": "@aastar/ethpaymaster_sdk_ts",
+  "version": "1.0.5",
+  "description": "EthPaymaster typescript Sdk",
+  "main": "index.js",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "eslint . --fix",
+    "prepublishOnly": "rimraf esm cjs && tsc && tsc -p tsconfig.cjs.json",
+    "test": "jest",
+    "spellcheck": "cspell \"**\""
+  },
+  "jest": {
+    "testMatch": [
+      "**/__tests__/**/*.ts",
+      "**/?(*.)+(spec|test).ts"
+    ]
+  },
+  "keywords": [],
+  "author": "AAStar",
+  "dependencies": {
+    "@account-abstraction/contracts": "^0.6.0",
+    "@account-abstraction/sdk": "^0.6.0",
+    "ethers": "^5.7.2",
+    "viem": "^2.7.15"
+  },
+  "devDependencies": {
+    "@dimensiondev/eslint-plugin": "^0.0.2-20220501020553-ec7e75d",
+    "cspell": "^5.20.0",
+    "@babel/core": "^7.23.9",
+    "@babel/preset-env": "^7.23.9",
+    "@babel/preset-typescript": "^7.23.3",
+    "@typescript-eslint/parser": "^5.22.0",
+    "@jest/globals": "^29.7.0",
+    "fetch-mock": "^9.11.0",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.2"
+  }
+}
