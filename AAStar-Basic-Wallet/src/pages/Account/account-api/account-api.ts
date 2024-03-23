@@ -62,7 +62,11 @@ class SimpleAccountTrampolineAPI
     context: any,
     request?: MessageSigningRequest
   ): Promise<string> => {
-    throw new Error('signMessage method not implemented.');
+    if (request?.rawSigningData) {
+      return await (this.owner as Wallet).signMessage(request.rawSigningData);
+    }
+    return '';
+    // throw new Error('signMessage method not implemented.');
   };
 
   /**
