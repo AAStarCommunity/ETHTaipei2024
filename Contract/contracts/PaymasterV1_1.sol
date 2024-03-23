@@ -111,6 +111,31 @@ contract PaymasterV1_1 is BasePaymaster {
             ));
     }
 
+    function getHashTest(UserOperation calldata userOp, uint48 validUntil, uint48 validAfter)
+    public view returns (uint256, bytes memory, bytes memory, bytes32) {
+        //can't use userOp.hash(), since it contains also the paymasterAndData itself.
+
+        return (
+            senderNonce[userOp.getSender()],
+            pack(userOp), 
+            abi.encode(
+                pack(userOp),
+                block.chainid,
+                address(this),
+                senderNonce[userOp.getSender()],
+                validUntil,
+                validAfter
+            ),
+            keccak256(abi.encode(
+                pack(userOp),
+                block.chainid,
+                address(this),
+                senderNonce[userOp.getSender()],
+                validUntil,
+                validAfter
+            )));
+    }
+
     /**
      * verify our external signer signed this request.
      * the "paymasterAndData" is expected to be the paymaster and a signature over the entire request params
@@ -174,6 +199,83 @@ contract PaymasterV1_1 is BasePaymaster {
         previousPrice = nativeAssetPrice * uint192(tokenDecimals) / tokenPrice;
     }
 
+    /// @notice Validates a paymaster user operation and calculates the required token amount for the transaction.
+    /// @param userOp The user operation data.
+    /// @param requiredPreFund The amount of tokens required for pre-funding.
+    /// @return context The context containing the token amount and user sender address (if applicable).
+    /// @return validationResult A uint256 value indicating the result of the validation (always 0 in this implementation).
+    function _ERC20PaymasterUserOp(UserOperation calldata userOp, uint256 requiredPreFund)
+        internal
+        returns (bytes memory context, uint256 validationResult)
+    {
+        (uint48 validUntil, uint48 validAfter, bytes calldata signature) = parsePaymasterAndData(userOp.paymasterAndData);
+        //ECDSA library supports both 64 and 65-byte long signatures.
+        // we only "require" it here so that the revert reason on invalid signature will be of "VerifyingPaymaster", and not "ECDSA"
+        require(signature.length == 64 || signature.length == 65, "VerifyingPaymaster: invalid signature length in paymasterAndData");
+        bytes32 hash = ECDSA.toEthSignedMessageHash(getHash(userOp, validUntil, validAfter));
+        senderNonce[userOp.getSender()]++;
+
+        //don't revert on signature failure: return SIG_VALIDATION_FAILED
+        if (verifyingSigner != ECDSA.recover(hash, signature)) {
+            validationResult = _packValidationData(true, validUntil, validAfter);
+        }
+        //no need for other on-chain validation: entire UserOp should have been checked
+        // by the external service prior to signing it.
+        else{
+            validationResult = _packValidationData(false, validUntil, validAfter);
+        }
+
+        unchecked {
+            uint256 cachedPrice = previousPrice;
+            require(cachedPrice != 0, "PP-ERC20 : price not set");
+            // NOTE: we assumed that nativeAsset's decimals is 18, if there is any nativeAsset with different decimals, need to change the 1e18 to the correct decimals
+            uint256 tokenAmount = (requiredPreFund + (REFUND_POSTOP_COST) * userOp.maxFeePerGas) * priceMarkup
+                * cachedPrice / (1e18 * priceDenominator);
+            SafeTransferLib.safeTransferFrom(address(token), userOp.sender, address(this), tokenAmount);
+            uint8 typeId = 1;
+            context = abi.encodePacked(typeId, tokenAmount, userOp.sender);
+        }
+    }
+
+    /// @notice Performs post-operation tasks, such as updating the token price and refunding excess tokens.
+    /// @dev This function is called after a user operation has been executed or reverted.
+    /// @param mode The post-operation mode (either successful or reverted).
+    /// @param context The context containing the token amount and user sender address.
+    /// @param actualGasCost The actual gas cost of the transaction.
+    function _ERC20PostOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost) internal {
+        if (mode == PostOpMode.postOpReverted) {
+            return; // Do nothing here to not revert the whole bundle and harm reputation
+        }
+        unchecked {
+            uint192 tokenPrice = fetchPrice(tokenOracle);
+            uint192 nativeAsset = fetchPrice(nativeAssetOracle);
+            uint256 cachedPrice = previousPrice;
+            uint192 price = nativeAsset * uint192(tokenDecimals) / tokenPrice;
+            uint256 cachedUpdateThreshold = priceUpdateThreshold;
+            if (
+                uint256(price) * priceDenominator / cachedPrice > priceDenominator + cachedUpdateThreshold
+                    || uint256(price) * priceDenominator / cachedPrice < priceDenominator - cachedUpdateThreshold
+            ) {
+                previousPrice = uint192(int192(price));
+                cachedPrice = uint192(int192(price));
+            }
+            // Refund tokens based on actual gas cost
+            // NOTE: we assumed that nativeAsset's decimals is 18, if there is any nativeAsset with different decimals, need to change the 1e18 to the correct decimals
+            uint256 actualTokenNeeded = (actualGasCost + REFUND_POSTOP_COST * tx.gasprice) * priceMarkup * cachedPrice
+                / (1e18 * priceDenominator); // We use tx.gasprice here since we don't know the actual gas price used by the user
+            if (uint256(bytes32(context[1:33])) > actualTokenNeeded) {
+                // If the initially provided token amount is greater than the actual amount needed, refund the difference
+                SafeTransferLib.safeTransfer(
+                    address(token),
+                    address(bytes20(context[33:53])),
+                    uint256(bytes32(context[1:33])) - actualTokenNeeded
+                );
+            } // If the token amount is not greater than the actual amount needed, no refund occurs
+
+            emit UserOperationSponsored(address(bytes20(context[33:53])), actualTokenNeeded, actualGasCost);
+        }
+    }
+
     /// @notice Fetches the latest price from the given Oracle.
     /// @dev This function is used to get the latest price from the tokenOracle or nativeAssetOracle.
     /// @param _oracle The Oracle contract to fetch the price from.
@@ -205,6 +307,9 @@ contract PaymasterV1_1 is BasePaymaster {
         require(typeId < 2, "PaymasterV1: invalid mode.");
         if (typeId == 0) {
             return  super._postOp(mode, context, actualGasCost);
+        }
+        else if (typeId == 1) {
+            return  _ERC20PostOp(mode, context, actualGasCost);
         }
     }
 }
