@@ -5,14 +5,13 @@ pragma solidity ^0.8.23;
 /* solhint-disable no-inline-assembly */
 
 import "../lib/account-abstraction/contracts/core/BasePaymaster.sol";
-import "../lib/account-abstraction/contracts/core/UserOperationLib.sol";
+import "../lib/account-abstraction/contracts/interfaces/UserOperation.sol";
 import "../lib/account-abstraction/contracts/core/Helpers.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import "../lib/account-abstraction/contracts/samples/utils/IOracle.sol";
+import "./utils/IOracle.sol";
 import "./utils/SafeTransferLib.sol";
 /**
  * A sample paymaster that uses external service to decide whether to pay for the UserOp.
@@ -23,17 +22,17 @@ import "./utils/SafeTransferLib.sol";
  * - the paymaster checks a signature to agree to PAY for GAS.
  * - the account checks a signature to prove identity and account ownership.
  */
-contract PaymasterV1 is BasePaymaster {
+contract PaymasterV1_1 is BasePaymaster {
 
-    using UserOperationLib for PackedUserOperation;
+    using ECDSA for bytes32;
+    using UserOperationLib for UserOperation;
 
     address public immutable verifyingSigner;
 
-    uint256 private constant TYPE_OFFSET = PAYMASTER_DATA_OFFSET + 1;
+    uint256 private constant TYPE_OFFSET = 20;
+    uint256 private constant VALID_TIMESTAMP_OFFSET = 21;
 
-    uint256 private constant VALID_TIMESTAMP_OFFSET = TYPE_OFFSET;
-
-    uint256 private constant SIGNATURE_OFFSET = VALID_TIMESTAMP_OFFSET + 64;
+    uint256 private constant SIGNATURE_OFFSET = 85;
 
     uint256 public constant priceDenominator = 1e6;
     uint256 public constant REFUND_POSTOP_COST = 40000; // Estimated gas cost for refunding tokens after the transaction is completed
@@ -73,6 +72,24 @@ contract PaymasterV1 is BasePaymaster {
         require(_nativeAssetOracle.decimals() == 8, "PP-ERC20 : native asset oracle decimals must be 8");
     }
 
+    mapping(address => uint256) public senderNonce;
+
+    function pack(UserOperation calldata userOp) internal pure returns (bytes memory ret) {
+        // lighter signature scheme. must match UserOp.ts#packUserOp
+        bytes calldata pnd = userOp.paymasterAndData;
+        // copy directly the userOp from calldata up to (but not including) the paymasterAndData.
+        // this encoding depends on the ABI encoding of calldata, but is much lighter to copy
+        // than referencing each field separately.
+        assembly {
+            let ofs := userOp
+            let len := sub(sub(pnd.offset, ofs), 32)
+            ret := mload(0x40)
+            mstore(0x40, add(ret, add(len, 32)))
+            mstore(ret, len)
+            calldatacopy(add(ret, 32), ofs, len)
+        }
+    }
+
     /**
      * return the hash we're going to sign off-chain (and validate on-chain)
      * this method is called by the off-chain service, to sign the request.
@@ -80,27 +97,18 @@ contract PaymasterV1 is BasePaymaster {
      * note that this signature covers all fields of the UserOperation, except the "paymasterAndData",
      * which will carry the signature itself.
      */
-    function getHash(PackedUserOperation calldata userOp, uint48 validUntil, uint48 validAfter)
+    function getHash(UserOperation calldata userOp, uint48 validUntil, uint48 validAfter)
     public view returns (bytes32) {
         //can't use userOp.hash(), since it contains also the paymasterAndData itself.
-        address sender = userOp.getSender();
-        return
-            keccak256(
-            abi.encode(
-                sender,
-                userOp.nonce,
-                keccak256(userOp.initCode),
-                keccak256(userOp.callData),
-                userOp.accountGasLimits,
-                uint256(bytes32(userOp.paymasterAndData[PAYMASTER_VALIDATION_GAS_OFFSET : PAYMASTER_DATA_OFFSET])),
-                userOp.preVerificationGas,
-                userOp.gasFees,
+
+        return keccak256(abi.encode(
+                pack(userOp),
                 block.chainid,
                 address(this),
+                senderNonce[userOp.getSender()],
                 validUntil,
                 validAfter
-            )
-        );
+            ));
     }
 
     /**
@@ -110,31 +118,31 @@ contract PaymasterV1 is BasePaymaster {
      * paymasterAndData[20:84] : abi.encode(validUntil, validAfter)
      * paymasterAndData[84:] : signature
      */
-    function _verifyingPaymasterUserOp(PackedUserOperation calldata userOp, uint256 requiredPreFund)
-    internal view returns (bytes memory context, uint256 validationData) {
+    function _verifyingPaymasterUserOp(UserOperation calldata userOp, uint256 requiredPreFund)
+    internal returns (bytes memory context, uint256 validationData) {
         (requiredPreFund);
 
         (uint48 validUntil, uint48 validAfter, bytes calldata signature) = parsePaymasterAndData(userOp.paymasterAndData);
         //ECDSA library supports both 64 and 65-byte long signatures.
         // we only "require" it here so that the revert reason on invalid signature will be of "VerifyingPaymaster", and not "ECDSA"
         require(signature.length == 64 || signature.length == 65, "VerifyingPaymaster: invalid signature length in paymasterAndData");
-        bytes32 hash = MessageHashUtils.toEthSignedMessageHash(getHash(userOp, validUntil, validAfter));
+        bytes32 hash = ECDSA.toEthSignedMessageHash(getHash(userOp, validUntil, validAfter));
+        senderNonce[userOp.getSender()]++;
 
         //don't revert on signature failure: return SIG_VALIDATION_FAILED
         if (verifyingSigner != ECDSA.recover(hash, signature)) {
-            return ("0x00", _packValidationData(true, validUntil, validAfter));
+            return ("0x00",_packValidationData(true,validUntil,validAfter));
         }
 
         //no need for other on-chain validation: entire UserOp should have been checked
         // by the external service prior to signing it.
-        return ("0x00", _packValidationData(false, validUntil, validAfter));
+        return ("0x00",_packValidationData(false,validUntil,validAfter));
     }
 
-    function parsePaymasterAndData(bytes calldata paymasterAndData) public pure returns (uint48 validUntil, uint48 validAfter, bytes calldata signature) {
-        (validUntil, validAfter) = abi.decode(paymasterAndData[VALID_TIMESTAMP_OFFSET :], (uint48, uint48));
-        signature = paymasterAndData[SIGNATURE_OFFSET :];
+    function parsePaymasterAndData(bytes calldata paymasterAndData) public pure returns(uint48 validUntil, uint48 validAfter, bytes calldata signature) {
+        (validUntil, validAfter) = abi.decode(paymasterAndData[VALID_TIMESTAMP_OFFSET:SIGNATURE_OFFSET],(uint48, uint48));
+        signature = paymasterAndData[SIGNATURE_OFFSET:];
     }
-
     
 
     /// @notice ERC20 Paymaster function
@@ -166,79 +174,6 @@ contract PaymasterV1 is BasePaymaster {
         previousPrice = nativeAssetPrice * uint192(tokenDecimals) / tokenPrice;
     }
 
-    /// @notice Validates a paymaster user operation and calculates the required token amount for the transaction.
-    /// @param userOp The user operation data.
-    /// @param requiredPreFund The amount of tokens required for pre-funding.
-    /// @return context The context containing the token amount and user sender address (if applicable).
-    /// @return validationResult A uint256 value indicating the result of the validation (always 0 in this implementation).
-    function _ERC20PaymasterUserOp(PackedUserOperation calldata userOp, uint256 requiredPreFund)
-        internal
-        returns (bytes memory context, uint256 validationResult)
-    {
-        unchecked {
-            uint256 cachedPrice = previousPrice;
-            require(cachedPrice != 0, "PP-ERC20 : price not set");
-            uint256 length = userOp.paymasterAndData.length - 53;
-            // 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdf is the mask for the last 6 bits 011111 which mean length should be 100000(32) || 000000(0)
-            require(
-                length & 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdf == 0,
-                "PP-ERC20 : invalid data length"
-            );
-            // NOTE: we assumed that nativeAsset's decimals is 18, if there is any nativeAsset with different decimals, need to change the 1e18 to the correct decimals
-            uint256 tokenAmount = (requiredPreFund + (REFUND_POSTOP_COST) * userOp.unpackMaxFeePerGas()) * priceMarkup
-                * cachedPrice / (1e18 * priceDenominator);
-            if (length == 32) {
-                require(
-                    tokenAmount <= uint256(bytes32(userOp.paymasterAndData[53:85])), "PP-ERC20 : token amount too high"
-                );
-            }
-            SafeTransferLib.safeTransferFrom(address(token), userOp.sender, address(this), tokenAmount);
-            uint8 typeId = 1;
-            context = abi.encodePacked(typeId, tokenAmount, userOp.sender);
-            // No return here since validationData == 0 and we have context saved in memory
-            validationResult = 0;
-        }
-    }
-
-    /// @notice Performs post-operation tasks, such as updating the token price and refunding excess tokens.
-    /// @dev This function is called after a user operation has been executed or reverted.
-    /// @param mode The post-operation mode (either successful or reverted).
-    /// @param context The context containing the token amount and user sender address.
-    /// @param actualGasCost The actual gas cost of the transaction.
-    function _ERC20PostOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost) internal {
-        if (mode == PostOpMode.postOpReverted) {
-            return; // Do nothing here to not revert the whole bundle and harm reputation
-        }
-        unchecked {
-            uint192 tokenPrice = fetchPrice(tokenOracle);
-            uint192 nativeAsset = fetchPrice(nativeAssetOracle);
-            uint256 cachedPrice = previousPrice;
-            uint192 price = nativeAsset * uint192(tokenDecimals) / tokenPrice;
-            uint256 cachedUpdateThreshold = priceUpdateThreshold;
-            if (
-                uint256(price) * priceDenominator / cachedPrice > priceDenominator + cachedUpdateThreshold
-                    || uint256(price) * priceDenominator / cachedPrice < priceDenominator - cachedUpdateThreshold
-            ) {
-                previousPrice = uint192(int192(price));
-                cachedPrice = uint192(int192(price));
-            }
-            // Refund tokens based on actual gas cost
-            // NOTE: we assumed that nativeAsset's decimals is 18, if there is any nativeAsset with different decimals, need to change the 1e18 to the correct decimals
-            uint256 actualTokenNeeded = (actualGasCost + REFUND_POSTOP_COST * tx.gasprice) * priceMarkup * cachedPrice
-                / (1e18 * priceDenominator); // We use tx.gasprice here since we don't know the actual gas price used by the user
-            if (uint256(bytes32(context[1:33])) > actualTokenNeeded) {
-                // If the initially provided token amount is greater than the actual amount needed, refund the difference
-                SafeTransferLib.safeTransfer(
-                    address(token),
-                    address(bytes20(context[33:53])),
-                    uint256(bytes32(context[1:33])) - actualTokenNeeded
-                );
-            } // If the token amount is not greater than the actual amount needed, no refund occurs
-
-            emit UserOperationSponsored(address(bytes20(context[33:53])), actualTokenNeeded, actualGasCost);
-        }
-    }
-
     /// @notice Fetches the latest price from the given Oracle.
     /// @dev This function is used to get the latest price from the tokenOracle or nativeAssetOracle.
     /// @param _oracle The Oracle contract to fetch the price from.
@@ -252,9 +187,9 @@ contract PaymasterV1 is BasePaymaster {
         price = uint192(int192(answer));
     }
 
-    function _validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 /*userOpHash*/, uint256 requiredPreFund)
+    function _validatePaymasterUserOp(UserOperation calldata userOp, bytes32 /*userOpHash*/, uint256 requiredPreFund)
     internal override returns (bytes memory context, uint256 validationData) {
-        uint8 typeId = uint8(bytes1(userOp.paymasterAndData[PAYMASTER_DATA_OFFSET: TYPE_OFFSET]));
+        uint8 typeId = uint8(bytes1(userOp.paymasterAndData[TYPE_OFFSET: VALID_TIMESTAMP_OFFSET]));
         require(typeId < 2, "PaymasterV1: invalid mode.");
         if (typeId == 0) {
             return  _verifyingPaymasterUserOp(userOp, requiredPreFund);
@@ -264,15 +199,12 @@ contract PaymasterV1 is BasePaymaster {
         }
     }
     
-    function _postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas) internal override 
+    function _postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost) internal override 
     {
         uint8 typeId= uint8(bytes1(context[:1]));
         require(typeId < 2, "PaymasterV1: invalid mode.");
         if (typeId == 0) {
-            return  super._postOp(mode, context, actualGasCost, actualUserOpFeePerGas);
-        }
-        else if (typeId == 1) {
-            return  _ERC20PostOp(mode, context, actualGasCost);
+            return  super._postOp(mode, context, actualGasCost);
         }
     }
 }
