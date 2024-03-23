@@ -1,5 +1,5 @@
-# ETHPaymaster Interface Typescript SDK
-ETHPaymaster typescript SDK
+# EthPaymaster_sdk_ts
+EthPaymaster typescript Sdk
 
 ```tsx
 let client = EthPaymasterClient.development(address)
