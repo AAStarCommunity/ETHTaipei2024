@@ -36,7 +36,7 @@ go run ./cmd/server/main.go
 > build image named `relay:demo`
 
 ```shell
-docker build -t relay .
+docker build -t relay:demo .
 ```
 
 > run image
