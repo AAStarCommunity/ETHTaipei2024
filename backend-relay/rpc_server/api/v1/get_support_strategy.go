@@ -2,7 +2,7 @@ package v1
 
 import (
 	"AAStarCommunity/EthPaymaster_BackService/common/model"
-	"AAStarCommunity/EthPaymaster_BackService/service/operator"
+	"AAStarCommunity/EthPaymaster_BackService/operator"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
