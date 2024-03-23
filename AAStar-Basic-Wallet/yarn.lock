@@ -11969,6 +11969,11 @@ performance-now@^2.1.0:
   resolved "https://registry.yarnpkg.com/performance-now/-/performance-now-2.1.0.tgz#6309f4e0e5fa913ec1c69307ae364b4b377c9e7b"
   integrity sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==
 
+permissionless@^0.1.11:
+  version "0.1.11"
+  resolved "https://registry.yarnpkg.com/permissionless/-/permissionless-0.1.11.tgz#482998988851b9f79e82684c0eb48cf2d7a99471"
+  integrity sha512-nk5F8EP+PNN7zRWNLCaUFqdMZrl+N6b23iqI2SPZ/thGUJSmJNIEfAJBpyOVejYHsWM5KXhG5u/lSZUZPQOQ8g==
+
 pg-connection-string@2.6.1:
   version "2.6.1"
   resolved "https://registry.yarnpkg.com/pg-connection-string/-/pg-connection-string-2.6.1.tgz#78c23c21a35dd116f48e12e23c0965e8d9e2cbfb"

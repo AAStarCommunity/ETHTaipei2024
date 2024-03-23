@@ -19,6 +19,12 @@ import { EthersTransactionRequest } from './types';
 import { UserOperationStruct } from '@account-abstraction/contracts';
 import { resolveProperties } from 'ethers/lib/utils.js';
 
+import { UserOperation } from "permissionless";
+import { pimlicoPaymasterActions } from "permissionless/actions/pimlico";
+import { createPublicClient, createClient, http, toHex } from 'viem';
+import { sepolia } from 'viem/chains';
+import { EntryPoint } from 'permissionless/types/entrypoint';
+
 interface Events extends ServiceLifecycleEvents {
   createPassword: string;
 }
@@ -47,6 +53,9 @@ export default class KeyringService extends BaseService<Events> {
   provider: Provider;
   bundler?: HttpRpcClient;
   paymasterAPI?: PaymasterAPI;
+  bundlerClient?: any;
+  paymasterClient?: any;
+  publicClient?: any;
 
   constructor(
     readonly mainServiceManager: MainServiceManager,
@@ -65,6 +74,19 @@ export default class KeyringService extends BaseService<Events> {
     const net = await this.provider.getNetwork();
 
     const chainId = net.chainId;
+    const chain = 'sepolia';
+    const apiKey = '085e6ede-800d-4de8-af64-b1ea89b34eee';
+
+    this.paymasterClient = createClient({
+      // ⚠️ using v2 of the API ⚠️
+      transport: http(`https://api.pimlico.io/v2/${chain}/rpc?apikey=${apiKey}`),
+      chain: sepolia,
+    }).extend(pimlicoPaymasterActions(this.entryPointAddress as EntryPoint));
+
+    this.publicClient = createPublicClient({
+      transport: http("https://mumbai.rpc.thirdweb.com"),
+      chain: sepolia,
+    });
 
     let bundlerRPC;
     try {
@@ -192,11 +214,11 @@ export default class KeyringService extends BaseService<Events> {
     this.keyrings = {};
   };
 
-  registerEventListeners = () => {};
+  registerEventListeners = () => { };
 
-  removeEventListeners = () => {};
+  removeEventListeners = () => { };
 
-  updateStore = () => {};
+  updateStore = () => { };
 
   createPassword = async (password: string) => {
     this.password = password;
@@ -422,37 +444,51 @@ export default class KeyringService extends BaseService<Events> {
       userOp.maxPriorityFeePerGas
     ).toHexString();
 
-    const gasParameters = await this.bundler?.estimateUserOpGas(
-      await keyring.signUserOp(userOp)
-    );
+    if (userOp.nonce === '0x00') {
+      userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
+      const result = await this.paymasterClient?.sponsorUserOperation({
+        userOperation: userOp as UserOperation<"v0.6">,
+      })
 
-    const estimatedGasLimit = ethers.BigNumber.from(
-      gasParameters?.callGasLimit
-    );
-    const estimateVerificationGasLimit = ethers.BigNumber.from(
-      gasParameters?.verificationGasLimit
-    );
-    const estimatePreVerificationGas = ethers.BigNumber.from(
-      gasParameters?.preVerificationGas
-    );
+      userOp.preVerificationGas = toHex(result.preVerificationGas);
+      userOp.verificationGasLimit = toHex(result.verificationGasLimit);
+      userOp.callGasLimit = toHex(result.callGasLimit);
+      userOp.paymasterAndData = result.paymasterAndData
+    } else {
+      const gasParameters = await this.bundler?.estimateUserOpGas(
+        await keyring.signUserOp(userOp)
+      );
 
-    userOp.callGasLimit = estimatedGasLimit.gt(
-      ethers.BigNumber.from(userOp.callGasLimit)
-    )
-      ? estimatedGasLimit.toHexString()
-      : userOp.callGasLimit;
+      const estimatedGasLimit = ethers.BigNumber.from(
+        gasParameters?.callGasLimit
+      );
+      const estimateVerificationGasLimit = ethers.BigNumber.from(
+        gasParameters?.verificationGasLimit
+      );
+      const estimatePreVerificationGas = ethers.BigNumber.from(
+        gasParameters?.preVerificationGas
+      );
 
-    userOp.verificationGasLimit = estimateVerificationGasLimit.gt(
-      ethers.BigNumber.from(userOp.verificationGasLimit)
-    )
-      ? estimateVerificationGasLimit.toHexString()
-      : userOp.verificationGasLimit;
+      userOp.callGasLimit = estimatedGasLimit.gt(
+        ethers.BigNumber.from(userOp.callGasLimit)
+      )
+        ? estimatedGasLimit.toHexString()
+        : userOp.callGasLimit;
 
-    userOp.preVerificationGas = estimatePreVerificationGas.gt(
-      ethers.BigNumber.from(userOp.preVerificationGas)
-    )
-      ? estimatePreVerificationGas.toHexString()
-      : userOp.preVerificationGas;
+      userOp.verificationGasLimit = estimateVerificationGasLimit.gt(
+        ethers.BigNumber.from(userOp.verificationGasLimit)
+      )
+        ? estimateVerificationGasLimit.toHexString()
+        : userOp.verificationGasLimit;
+
+      userOp.preVerificationGas = estimatePreVerificationGas.gt(
+        ethers.BigNumber.from(userOp.preVerificationGas)
+      )
+        ? estimatePreVerificationGas.toHexString()
+        : userOp.preVerificationGas;
+      userOp.paymasterAndData = '0x'
+    }
+    userOp.signature = '0x';
 
     return userOp;
   };
