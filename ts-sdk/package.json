@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "eslint . --fix",
+    "lint": "eslint .. --fix",
     "prepublishOnly": "rimraf esm cjs && tsc && tsc -p tsconfig.cjs.json",
     "test": "jest",
     "spellcheck": "cspell \"**\""
