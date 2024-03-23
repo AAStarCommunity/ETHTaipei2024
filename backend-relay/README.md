@@ -29,3 +29,27 @@ swag init -g ./cmd/server/main.go
 go mod tidy
 go run ./cmd/server/main.go
 ```
+
+
+## 3. Docker
+
+> build image named `relay:demo`
+
+```shell
+docker build -t relay .
+```
+
+> run image
+
+```shell
+ docker run --rm -e Env=dev -e jwt__idkey=id -e jwt__realm=aastar -e jwt__security=security -p 80:80 relay:demo
+```
+
+this will create a container named relay using image relay:demo, and will destroy after stop the container;
+
+`Env` means running environment, `dev` supports much more details for debugging, others equal to `prod`
+
+`jwt__*` is for JWT auth
+
+when you're running your container, open browser with [swagger](http://localhost/swagger/index.html)
+
