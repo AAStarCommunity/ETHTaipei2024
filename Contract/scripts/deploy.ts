@@ -36,15 +36,15 @@ async function main() {
 
     const testAddress = "0x0E1375d18a4A2A867bEfe908E87322ad031386a6"
 
-    //const verifyingPaymasterAddress = await deployContract("VerifyingPaymaster", "VerifyingPaymaster",[entryPointAddress, testAddress]);
+    const verifyingPaymasterAddress = await deployContract("VerifyingPaymaster", "VerifyingPaymaster",[entryPointAddress, testAddress]);
     
-    const paymasterV1_1Address = await deployContract("PaymasterV1_1", "PaymasterV1_1",
-    [entryPointAddress, testAddress, config._usdc_address, config._usdc_usd_aggregator, config._eth_usd_aggregator,signer]);
+    //const paymasterV1_1Address = await deployContract("PaymasterV1_1", "PaymasterV1_1",
+    //[entryPointAddress, testAddress, config._usdc_address, config._usdc_usd_aggregator, config._eth_usd_aggregator,signer]);
 
     console.log("------------ RESULT ---------------")
     console.log("[ContractAddress] EntryPointAddress: %s", entryPointAddress);
-    //console.log("[ContractAddress] VerifyingPaymasterAddress: %s", verifyingPaymasterAddress);
-    console.log("[ContractAddress] PaymasterV1_1Address: %s", paymasterV1_1Address);
+    console.log("[ContractAddress] VerifyingPaymasterAddress: %s", verifyingPaymasterAddress);
+    //console.log("[ContractAddress] PaymasterV1_1Address: %s", paymasterV1_1Address);
     console.log("------------ RESULT ---------------")
 
     console.log("[Success] All contracts have been deployed success.")

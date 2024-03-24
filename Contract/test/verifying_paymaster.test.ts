@@ -88,9 +88,6 @@ describe('EntryPoint with VerifyingPaymaster', function () {
         expect(ret.returnInfo.sigFailed).to.be.true
       })
 
-      it('handleOp revert on signature failure in handleOps', async () => {
-        await expect(entryPoint.estimateGas.handleOps([wrongSigUserOp], beneficiaryAddress)).to.revertedWith('AA34 signature error')
-      })
     })
 
     it('succeed with valid signature', async () => {

@@ -41,11 +41,17 @@ const config: HardhatUserConfig = {
     }, mumbai: {
         url: 'https://polygon-mumbai.g.alchemy.com/v2/msaJegrQLaLoy3szqaYUebeTejvKLeJO',
         accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : []
-    }
-},
-etherscan: {
-    apiKey: process.env.SCAN_API_KEY
-},
+    }, opt_sepolia: {
+        url: 'https://opt-sepolia.g.alchemy.com/v2/5iTtSotuDzoKGqXASF2s2cWANWUif84c',
+        accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : []
+    }, linea_goerli: {
+        url: 'https://linea-goerli.infura.io/v3/cccdbc4128e6479ab9b4a8bbec835283',
+        accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : []
+    }, 
+  },
+  etherscan: {
+    apiKey: process.env.LINEASCAN_API_KEY
+  },
 };
 
 export default config;
