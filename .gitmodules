@@ -1,3 +1,4 @@
 [submodule "Contract/lib/account-abstraction"]
 	path = Contract/lib/account-abstraction
-	url = git@github.com:eth-infinitism/account-abstraction.git
+	url = https://github.com/eth-infinitism/account-abstraction.git
+	branch = releases/v0.6
