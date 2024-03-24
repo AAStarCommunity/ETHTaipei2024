@@ -17,6 +17,7 @@
     "prettier": "prettier --write '**/*.{js,jsx,ts,tsx,json,css,scss,md}'"
   },
   "dependencies": {
+    "@aastar/ethpaymaster_sdk_ts": "1.0.3",
     "@account-abstraction/contracts": "^0.6.0",
     "@account-abstraction/sdk": "^0.6.0",
     "@emotion/react": "^11.10.5",

@@ -20,11 +20,12 @@ import { UserOperationStruct } from '@account-abstraction/contracts';
 import { resolveProperties } from 'ethers/lib/utils.js';
 
 import { UserOperation } from "permissionless";
-import { pimlicoPaymasterActions } from "permissionless/actions/pimlico";
-import { createPublicClient, createClient, http, toHex } from 'viem';
-import { sepolia } from 'viem/chains';
-import { EntryPoint } from 'permissionless/types/entrypoint';
+import { encodeFunctionData } from 'viem';
 
+import EthPaymasterClient from "@aastar/ethpaymaster_sdk_ts";
+
+const devAddress = "https://relay-ethpaymaster-pr-20.onrender.com/";
+// const devAddress = "http://127.0.0.1:80/";
 interface Events extends ServiceLifecycleEvents {
   createPassword: string;
 }
@@ -53,9 +54,7 @@ export default class KeyringService extends BaseService<Events> {
   provider: Provider;
   bundler?: HttpRpcClient;
   paymasterAPI?: PaymasterAPI;
-  bundlerClient?: any;
-  paymasterClient?: any;
-  publicClient?: any;
+
 
   constructor(
     readonly mainServiceManager: MainServiceManager,
@@ -74,19 +73,6 @@ export default class KeyringService extends BaseService<Events> {
     const net = await this.provider.getNetwork();
 
     const chainId = net.chainId;
-    const chain = 'sepolia';
-    const apiKey = '085e6ede-800d-4de8-af64-b1ea89b34eee';
-
-    this.paymasterClient = createClient({
-      // ⚠️ using v2 of the API ⚠️
-      transport: http(`https://api.pimlico.io/v2/${chain}/rpc?apikey=${apiKey}`),
-      chain: sepolia,
-    }).extend(pimlicoPaymasterActions(this.entryPointAddress as EntryPoint));
-
-    this.publicClient = createPublicClient({
-      transport: http("https://mumbai.rpc.thirdweb.com"),
-      chain: sepolia,
-    });
 
     let bundlerRPC;
     try {
@@ -393,7 +379,7 @@ export default class KeyringService extends BaseService<Events> {
 
   sendUserOp = async (
     address: string,
-    userOp: UserOperationStruct
+    userOp: UserOperation<"v0.6">
   ): Promise<string | null> => {
     if (this.bundler) {
       const userOpHash = await this.bundler.sendUserOpToBundler(userOp);
@@ -432,7 +418,7 @@ export default class KeyringService extends BaseService<Events> {
       userOp.callGasLimit
     ).toHexString();
     userOp.verificationGasLimit = ethers.BigNumber.from(
-      userOp.verificationGasLimit
+      100_0000n || userOp.verificationGasLimit
     ).toHexString();
     userOp.preVerificationGas = ethers.BigNumber.from(
       userOp.preVerificationGas
@@ -444,52 +430,106 @@ export default class KeyringService extends BaseService<Events> {
       userOp.maxPriorityFeePerGas
     ).toHexString();
 
-    if (userOp.nonce === '0x00') {
-      userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
-      const result = await this.paymasterClient?.sponsorUserOperation({
-        userOperation: userOp as UserOperation<"v0.6">,
-      })
+    const ethPaymaster = EthPaymasterClient.development(devAddress)
 
-      userOp.preVerificationGas = toHex(result.preVerificationGas);
-      userOp.verificationGasLimit = toHex(result.verificationGasLimit);
-      userOp.callGasLimit = toHex(result.callGasLimit);
-      userOp.paymasterAndData = result.paymasterAndData
+    const healthRes = await ethPaymaster.health();
+    if (healthRes && healthRes.code === 200) {
+      console.log('healthRes', healthRes);
     } else {
-      const gasParameters = await this.bundler?.estimateUserOpGas(
-        await keyring.signUserOp(userOp)
-      );
-
-      const estimatedGasLimit = ethers.BigNumber.from(
-        gasParameters?.callGasLimit
-      );
-      const estimateVerificationGasLimit = ethers.BigNumber.from(
-        gasParameters?.verificationGasLimit
-      );
-      const estimatePreVerificationGas = ethers.BigNumber.from(
-        gasParameters?.preVerificationGas
-      );
-
-      userOp.callGasLimit = estimatedGasLimit.gt(
-        ethers.BigNumber.from(userOp.callGasLimit)
-      )
-        ? estimatedGasLimit.toHexString()
-        : userOp.callGasLimit;
-
-      userOp.verificationGasLimit = estimateVerificationGasLimit.gt(
-        ethers.BigNumber.from(userOp.verificationGasLimit)
-      )
-        ? estimateVerificationGasLimit.toHexString()
-        : userOp.verificationGasLimit;
-
-      userOp.preVerificationGas = estimatePreVerificationGas.gt(
-        ethers.BigNumber.from(userOp.preVerificationGas)
-      )
-        ? estimatePreVerificationGas.toHexString()
-        : userOp.preVerificationGas;
-      userOp.paymasterAndData = '0x'
+      console.error(healthRes);
     }
-    userOp.signature = '0x';
+    const authRes = await ethPaymaster.auth('string')
+    if (authRes && authRes.code === 200) {
+      console.log(authRes, 'authRes');
+    } else {
+      console.error(authRes);
+    }
 
+    const usdcTokenAddress = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+
+    if (userOp.paymasterAndData !== '0x') {
+      if (userOp.nonce === '0x00') {
+        userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
+        const paymasterAddress = userOp.paymasterAndData as `0x${string}`;
+        const approveData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "_spender", type: "address" },
+                { name: "_value", type: "uint256" },
+              ],
+              name: "approve",
+              outputs: [{ name: "", type: "bool" }],
+              payable: false,
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [paymasterAddress, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn],
+        });
+        userOp.callData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "dest", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "func", type: "bytes" },
+              ],
+              name: "execute",
+              outputs: [],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [usdcTokenAddress, 0n, approveData],
+        });
+      } else {
+        let { to, value, data } = transaction;
+        const callData = encodeFunctionData({
+          abi: [
+            {
+              inputs: [
+                { name: "dest", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "func", type: "bytes" },
+              ],
+              name: "execute",
+              outputs: [],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          args: [to as `0x${string}`, ethers.BigNumber.from(value), data],
+        })
+
+        userOp.callData = callData;
+        userOp.signature = '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c';
+      }
+    }
+
+    const tryPayUseOp = {
+      force_strategy_id: '1',
+      user_operation: {
+        call_data: userOp.callData,
+        call_gas_limit: userOp.callGasLimit,
+        init_code: userOp.initCode,
+        max_fee_per_gas: userOp.maxFeePerGas,
+        max_priority_fee_per_gas: userOp.maxPriorityFeePerGas,
+        nonce: userOp.nonce,
+        pre_verification_gas: userOp.preVerificationGas,
+        sender: userOp.sender,
+        signature: userOp.signature,
+        verification_gas_limit: userOp.verificationGasLimit,
+        paymaster_and_data: userOp.paymasterAndData,
+      }
+    }
+    const tryPayUserOpRes = await ethPaymaster.tryPayUserOperationV1(authRes.token, tryPayUseOp);
+    if (tryPayUserOpRes && tryPayUserOpRes.code === 200) {
+      const { data: { paymaster_and_data: paymasterAndData, } } = tryPayUserOpRes;
+      userOp.paymasterAndData = paymasterAndData;
+    } else {
+      alert(JSON.stringify(tryPayUserOpRes));
+    }
     return userOp;
   };
 

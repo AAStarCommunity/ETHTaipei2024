@@ -32,13 +32,13 @@ const AccountBalanceInfo = ({ address }: { address: string }) => {
 
   return (
     <Stack spacing={1} justifyContent="center" alignItems="center">
-      {activeNetwork.baseAsset.image && (
+      {/* {activeNetwork.baseAsset.image && (
         <img
           height={40}
           src={activeNetwork.baseAsset.image}
           alt={`${activeNetwork.baseAsset.name} asset logo`}
         />
-      )}
+      )} */}
       {accountData !== 'loading' &&
         accountData.balances &&
         accountData.balances[activeNetwork.baseAsset.symbol] && (

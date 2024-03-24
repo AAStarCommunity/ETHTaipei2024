@@ -1,35 +1,60 @@
-# ETHPaymaster Interface Typescript SDK
-ETHPaymaster typescript SDK
 
-```tsx
-let client = EthPaymasterClient.development(address)
- 
-const healthResponse = await client.health()
-   
-const authResponse = await client.auth("API-KEY")
-  
-const token = authResponse.token
-  
-const strategyResponse = await client.getSupportStrategyV1(Network.Ethereum, authResponse.token) 
-  
-const entrypointResponse = await client.getSupportEntryPointV1(Network.Ethereum, authResponse.token)
- 
-const request: TryPayUserOpRequestV1 = {
-            force_strategy_id: "1",
-            user_operation: {
-                call_data: "0xb61d27f6000000000000000000000000c206b552ab127608c3f666156c8e03a8471c72df000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000",
-                call_gas_limit: "39837",
-                init_code: "0xe19e9755942bb0bd0cccce25b1742596b8a8250b3bf2c3e700000000000000000000000078d4f01f56b982a3b03c4e127a5d3afa8ebee6860000000000000000000000008b388a082f370d8ac2e2b3997e9151168bd09ff50000000000000000000000000000000000000000000000000000000000000000",
-                max_fee_per_gas: "44020",
-                max_priority_fee_per_gas: "1743509478",
-                nonce: "1",
-                pre_verification_gas: "44020",
-                sender: "0x4A2FD3215420376DA4eD32853C19E4755deeC4D1",
-                signature: "0x760868cd7d9539c6e31c2169c4cab6817beb8247516a90e4301e929011451658623455035b83d38e987ef2e57558695040a25219c39eaa0e31a0ead16a5c925c1c",
-                verification_gas_limit: "100000",
-                paymaster_and_data : "0x"
-            }
+# ETHTaipei2024 - Paymaster
 
- }
-const tryPayResponse = await client.tryPayUserOperationV1(authResponse.token, request)
-```
+Implementation of reducing transaction gas based on trampoline and AAStar-paymaster.
+
+## Get the browser extension wallet
+
+1. Clone this repository.
+2. Move into `AAStar-Basic-Wallet` folder 
+3. Run `yarn install` to install the dependencies.
+4. Run `yarn start`
+5. Load your extension in Chrome by following these steps:
+   1. Go to `chrome://extensions/`
+   2. Enable `Developer mode`
+   3. Click on `Load unpacked extension`
+   4. Select the `build` folder.
+
+
+## Create an account
+
+1. Set name
+<img width="300" src="./img/2_1.png">
+2. Click to continue
+<img width="300" src="./img/2_2.png">
+
+## Deploy account
+
+1. Add a little gas fee to the new account so that it can be deployed
+<img width="300" src="./img/3_1.png">
+Then
+<img width="300" src="./img/3_2.png">
+Click the button `Deploy Account`
+<img width="300" src="./img/3_3.png">
+Add paymasterAndData (it's `0xAEbF4C90b571e7D5cb949790C9b8Dc0280298b63` which is a paymaster address)
+<img width="300" src="./img/3_4.png">
+Next, click the button `Continue` and `Send`
+<img width="300" src="./img/3_5.png">
+After a while, we can see the picture below
+<img width="300" src="./img/3_6.png">
+
+The first gasless transaction has been completed.
+
+## Send your second gasless transaction
+
+Click `SEND` button, we can get this.
+<img width="300" src="./img/4_1.png">
+Enter address and value.
+Like this, then send transaction.
+<img width="300" src="./img/4_2.png">
+Add paymasterAndData, then click `Continue`
+<img width="300" src="./img/4_3.png">
+
+Confirm the transaction, then click the `SEND`
+<img width="300" src="./img/4_4.png">
+
+After a while, we can see the picture below
+<img width="300" src="./img/4_5.png">
+
+If you want to see detailed information, you can go to [Etherscan](https://sepolia.etherscan.io/address/0x862d7238f81334D81930C6945425062b47a0f2b7#internaltx) to view it.
+
